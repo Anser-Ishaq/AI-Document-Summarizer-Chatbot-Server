@@ -10,6 +10,9 @@ router.post('/', chatController.createChat);
 // Get all chats for the user
 router.get('/', chatController.getUserChats);
 
+// Delete a specific chat
+router.delete("/delete/:id", chatController.deleteChat)
+
 // Get a specific chat with its messages
 router.get('/:id', chatController.getChat);
 
