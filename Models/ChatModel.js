@@ -20,7 +20,7 @@ const ChatModel = {
       })
       .select()
       .single();
-      
+
     if (error) throw error;
     return data;
   },
@@ -37,9 +37,33 @@ const ChatModel = {
       `)
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
-      
+
     if (error) throw error;
     return data;
+  },
+
+  /**
+ * Delete all chats for a specific user
+ */
+  async deleteUserChats(userId) {
+    try {
+      // Query to delete all chats where the user_id matches
+      const { error, count } = await supabase
+        .from('chats')  // Assuming the table name is 'chats'
+        .delete()
+        .eq('user_id', userId);
+
+      // Handle any errors from the Supabase operation
+      if (error) {
+        console.error('Supabase error deleting chats:', error);
+        throw error;
+      }
+
+      return { success: true, count };
+    } catch (error) {
+      console.error('Error in deleteUserChats model method:', error);
+      throw error;
+    }
   },
 
   /**
@@ -55,17 +79,17 @@ const ChatModel = {
       .eq('id', chatId)
       .eq('user_id', userId)
       .single();
-      
+
     if (chatError) throw chatError;
-    
+
     const { data: messages, error: messagesError } = await supabase
       .from('chat_messages')
       .select('*')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
-      
+
     if (messagesError) throw messagesError;
-    
+
     return { ...chat, messages };
   },
 
@@ -82,15 +106,15 @@ const ChatModel = {
       })
       .select()
       .single();
-      
+
     if (error) throw error;
-    
+
     // Update the chat's updated_at timestamp
     await supabase
       .from('chats')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', chatId);
-      
+
     return data;
   },
 
@@ -101,25 +125,25 @@ const ChatModel = {
     try {
       // 1. Save the user message
       const savedUserMessage = await this.addMessage(chatId, 'user', userMessage);
-      
+
       // 2. Get chat and document information
       const { documents, messages } = await this.getChat(chatId, userId);
       console.log("documents from getchats", documents)
       const documentId = documents?.id;
-      
+
       // 3. Get relevant context from document embeddings
       let context = '';
       if (documentId) {
         context = await this.getRelevantContext(documentId, userMessage);
       }
       console.log("context from document", context)
-      
+
       // 4. Format previous messages for the conversation
       const previousMessages = messages.map(msg => ({
         role: msg.role,
         content: msg.content
       }));
-      
+
       // 5. Create a system message with context
       const systemMessage = {
         role: 'system',
@@ -129,7 +153,7 @@ const ChatModel = {
                   
                   If the answer cannot be found in the document, say so clearly.`
       };
-      
+
       // 6. Generate AI response
       const completion = await openai.chat.completions.create({
         model: "gpt-4o", // or your preferred model
@@ -140,12 +164,12 @@ const ChatModel = {
         ],
         temperature: 0.7,
       });
-      
+
       const aiResponse = completion.choices[0].message.content;
-      
+
       // 7. Save the AI response
       const savedAiMessage = await this.addMessage(chatId, 'assistant', aiResponse);
-      
+
       return {
         userMessage: savedUserMessage,
         aiMessage: savedAiMessage
@@ -166,9 +190,9 @@ const ChatModel = {
         model: "text-embedding-ada-002",
         input: query,
       });
-      
+
       const queryEmbedding = embeddingResponse.data[0].embedding;
-      
+
       // 2. Find similar document chunks using vector similarity
       const { data, error } = await supabase.rpc('match_document_embeddings', {
         query_embedding: queryEmbedding,
@@ -176,12 +200,12 @@ const ChatModel = {
         match_threshold: 0.7,
         match_count: 5
       });
-      
+
       if (error) throw error;
-      
+
       // 3. Combine relevant chunks into context
       const context = data.map(item => item.content).join('\n\n');
-      
+
       return context;
     } catch (error) {
       console.error('Error getting relevant context:', error);

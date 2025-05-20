@@ -1,4 +1,3 @@
-// Models/AuthModel.js
 import supabase from '../Utils/supabaseClient.js';
 
 const AuthModel = {
@@ -10,7 +9,7 @@ const AuthModel = {
    * @param {string} userData.userName - User password
    * @returns {Promise} - Promise resolving to registration result
    */
-  async signup({ email, password,userName, ...additionalData }) {
+  async signup({ email, password, userName, ...additionalData }) {
     // Register the user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -50,7 +49,7 @@ const AuthModel = {
     });
 
     if (error) throw error;
-    
+
     return data;
   },
 
@@ -60,10 +59,32 @@ const AuthModel = {
    */
   async logout() {
     const { error } = await supabase.auth.signOut();
-    
+
     if (error) throw error;
-    
+
     return { success: true };
+  },
+
+  /**
+  * Delete a user account by ID
+  * @param {string} userId - The ID of the user to delete
+  * @returns {Promise<void>}
+  */
+  async deleteAccount(userId) {
+    // Step 1: Delete from Supabase Auth (admin operation)
+    const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(userId);
+
+    if (deleteAuthError) throw deleteAuthError;
+
+    // Step 2: Optionally delete related profile data
+    const { error: deleteProfileError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('user_id', userId);
+
+    if (deleteProfileError) throw deleteProfileError;
+
+    return;
   }
 };
 

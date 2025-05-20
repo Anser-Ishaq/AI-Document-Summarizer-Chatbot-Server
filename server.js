@@ -16,7 +16,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Sample Route
 app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to the Server' });
+  res.json({ message: 'Email Confirmed' });
 });
 
 // Test connection route

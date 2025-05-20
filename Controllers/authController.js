@@ -10,21 +10,21 @@ const authController = {
     try {
       // Validate input
       const { email, password, userName } = req.body;
-      
-      if (!email || !password ||!userName) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'All Fields are required' 
+
+      if (!email || !password || !userName) {
+        return res.status(400).json({
+          success: false,
+          message: 'All Fields are required'
         });
       }
-      
+
       // Register the user
-      const userData = await AuthModel.signup({ 
-        email, 
-        password, 
+      const userData = await AuthModel.signup({
+        email,
+        password,
         userName
       });
-      
+
       res.status(201).json({
         success: true,
         message: 'Registration successful! Please check your email to verify your account.',
@@ -54,17 +54,17 @@ const authController = {
     try {
       // Validate input
       const { email, password } = req.body;
-      
+
       if (!email || !password) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Email and password are required' 
+        return res.status(400).json({
+          success: false,
+          message: 'Email and password are required'
         });
       }
-      
+
       // Login the user
       const userData = await AuthModel.login({ email, password });
-      
+
       res.json({
         success: true,
         message: 'User logged in successfully',
@@ -94,7 +94,7 @@ const authController = {
   async logout(req, res) {
     try {
       await AuthModel.logout();
-      
+
       res.json({
         success: true,
         message: 'User logged out successfully'
@@ -105,6 +105,38 @@ const authController = {
         success: false,
         message: 'Failed to logout',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  },
+
+  /**
+  * Delete a user account
+  * @param {Object} req - Express request object
+  * @param {Object} res - Express response object
+  */
+  async deleteAccount(req, res) {
+    try {
+      const userId = req.params.userId;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID is required',
+        });
+      }
+
+      await AuthModel.deleteAccount(userId);
+
+      res.status(200).json({
+        success: true,
+        message: 'User account deleted successfully',
+      });
+    } catch (error) {
+      console.error('Delete account error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to delete user account',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
       });
     }
   }
