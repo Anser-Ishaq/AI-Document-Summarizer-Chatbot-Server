@@ -29,14 +29,17 @@ export const upload = multer({
         const allowedMimeTypes = [
             'application/pdf',
             'text/plain',
-            'application/msword', // .doc
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' // .docx
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/png',
+            'image/jpeg',
+            'image/jpg'
         ];
 
         if (allowedMimeTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only PDF, TXT, DOC, and DOCX files are allowed'));
+            cb(new Error('Only PDF, TXT, DOC, DOCX, PNG, JPG, and JPEG files are allowed'));
         }
     }
 });

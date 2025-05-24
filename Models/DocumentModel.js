@@ -34,26 +34,85 @@ const DocumentModel = {
 
       if (documentError) throw documentError;
 
-      // 2. Process the PDF to extract text
-      const loader = this.getLoaderByMimeType(file.path, file.mimetype);
-      console.log("Uploaded file mimetype:", file.mimetype);
-      const docs = await loader.load();
-      const textContent = docs.map(doc => doc.pageContent).join('\n');
+      if (this.isImageFile(mimetype)) {
+        // For images, we'll get a description from OpenAI
+        const imageDescription = await this.getImageDescription(file.path);
 
-      // 3. Update the document record with the extracted text
-      const { error: updateError } = await supabase
-        .from('documents')
-        .update({ content: textContent })
-        .eq('id', document.id);
+        // Update the document record with the image description
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ content: imageDescription })
+          .eq('id', document.id);
 
-      if (updateError) throw updateError;
+        if (updateError) throw updateError;
 
-      // 4. Create embeddings for the document content
-      await this.createEmbeddings(document.id, textContent);
+        // Create embeddings for the image description
+        await this.createEmbeddings(document.id, imageDescription);
+      } else {
+        // Existing text document processing
+        const loader = this.getLoaderByMimeType(file.path, mimetype);
+        const docs = await loader.load();
+        const textContent = docs.map(doc => doc.pageContent).join('\n');
+
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ content: textContent })
+          .eq('id', document.id);
+
+        if (updateError) throw updateError;
+
+        await this.createEmbeddings(document.id, textContent);
+      }
 
       return document;
     } catch (error) {
       console.error('Error uploading document:', error);
+      throw error;
+    }
+  },
+  /**
+   * Check if file is an image
+   */
+  isImageFile(mimetype) {
+    const imageMimeTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    return imageMimeTypes.includes(mimetype);
+  },
+
+  /**
+   * Get description of an image using OpenAI's Vision API
+   */
+  async getImageDescription(filePath) {
+    try {
+      // Read the image file and convert to base64
+      const imageBuffer = fs.readFileSync(filePath);
+      const base64Image = imageBuffer.toString('base64');
+
+      const response = await openai.chat.completions.create({
+        // model: "gpt-4-vision-preview",
+        model: "gpt-4.1",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Describe this image in detail, including any text, diagrams, tables, or visual elements. Be as thorough as possible to enable meaningful conversation about the image content."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 1000
+      });
+
+      return response.choices[0].message.content;
+    } catch (error) {
+      console.error('Error getting image description:', error);
       throw error;
     }
   },
@@ -62,7 +121,7 @@ const DocumentModel = {
  * Upload documents of different Formats
  */
   getLoaderByMimeType(filePath, mimetype) {
-    console.log("mimie type of files=========",mimetype)
+    console.log("mimie type of files=========", mimetype)
     if (mimetype === 'application/pdf') {
       return new PDFLoader(filePath);
     } else if (mimetype === 'text/plain') {
@@ -72,7 +131,10 @@ const DocumentModel = {
       mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ) {
       return new DocxLoader(filePath);
-    } else {
+    } else if (this.isImageFile(mimetype)) {
+      throw new Error('Image files should be handled by the image processing flow');
+    }
+    else {
       throw new Error(`Unsupported file type: ${mimetype}`);
     }
   },
