@@ -4,11 +4,14 @@ import { testConnection, handleTestConnection } from './Utils/dbCon.js';
 import authRoutes from "./Routes/authRoutes.js"
 import documentRoutes from "./Routes/documentRoutes.js"
 import chatRoutes from "./Routes/chatRoutes.js"
+import stripeRoutes from "./Routes/stripeRoutes.js"
 import path from "path"
 import cors from "cors"
 dotenv.config();
 const app = express();
 app.use(cors())
+// for stripe webhook
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 // Serve uploaded files statically (if needed)
@@ -26,6 +29,7 @@ app.get('/test-connection', handleTestConnection);
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/chats', chatRoutes);
+app.use('/api/stripe', stripeRoutes);
 
 const PORT = process.env.PORT || 3000;
 

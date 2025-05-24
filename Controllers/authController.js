@@ -31,7 +31,8 @@ const authController = {
         data: {
           user: {
             id: userData.user.id,
-            email: userData.user.email
+            email: userData.user.email,
+            userName: userData.user.username
           }
         }
       });
@@ -64,6 +65,7 @@ const authController = {
 
       // Login the user
       const userData = await AuthModel.login({ email, password });
+      console.log("user data from login",userData)
 
       res.json({
         success: true,
@@ -71,7 +73,9 @@ const authController = {
         data: {
           user: {
             id: userData.user.id,
-            email: userData.user.email
+            email: userData.user.email,
+            username: userData.user.username,
+            status: userData.user.status
           },
           session: userData.session
         }

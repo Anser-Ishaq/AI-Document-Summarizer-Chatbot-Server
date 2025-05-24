@@ -9,24 +9,23 @@ const AuthModel = {
    * @param {string} userData.userName - User password
    * @returns {Promise} - Promise resolving to registration result
    */
-  async signup({ email, password, userName, ...additionalData }) {
+  async signup({ email, password, userName }) {
     // Register the user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
-      password,
-      userName
+      password
     });
 
     if (authError) throw authError;
 
-    // If we have additional profile data, store it in a profiles table
-    if (Object.keys(additionalData).length > 0 && authData.user) {
+    if (authData.user) {
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
           user_id: authData.user.id,
           email,
-          ...additionalData
+          username: userName,
+           status: 'free'
         });
 
       if (profileError) throw profileError;
@@ -43,6 +42,7 @@ const AuthModel = {
    * @returns {Promise} - Promise resolving to login result
    */
   async login({ email, password }) {
+    // Step 1: Sign in with Supabase Auth
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
@@ -50,8 +50,32 @@ const AuthModel = {
 
     if (error) throw error;
 
-    return data;
+    const user = data.user;
+    const session = data.session;
+
+    if (!user) throw new Error('User not found after login.');
+
+    // Step 2: Fetch profile data (username, status)
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('username, status')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError) throw profileError;
+
+    // Step 3: Return merged data
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        username: profile.username,
+        status: profile.status
+      },
+      session
+    };
   },
+
 
   /**
    * Log out the current user
