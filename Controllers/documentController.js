@@ -26,11 +26,17 @@ export const upload = multer({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
-        // Only accept PDF files
-        if (file.mimetype === 'application/pdf') {
+        const allowedMimeTypes = [
+            'application/pdf',
+            'text/plain',
+            'application/msword', // .doc
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' // .docx
+        ];
+
+        if (allowedMimeTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only PDF files are allowed'));
+            cb(new Error('Only PDF, TXT, DOC, and DOCX files are allowed'));
         }
     }
 });
@@ -52,7 +58,8 @@ const documentController = {
             const document = await DocumentModel.uploadDocument(
                 userId,
                 req.file,
-                req.file.originalname
+                req.file.originalname,
+                req.file.mimetype,
             );
 
             res.status(201).json({
