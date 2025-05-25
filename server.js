@@ -33,7 +33,8 @@ app.use('/api/stripe', stripeRoutes);
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await testConnection();
 });
+server.setTimeout(60000);
