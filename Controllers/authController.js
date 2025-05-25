@@ -65,7 +65,7 @@ const authController = {
 
       // Login the user
       const userData = await AuthModel.login({ email, password });
-      console.log("user data from login",userData)
+      console.log("user data from login", userData)
 
       res.json({
         success: true,
@@ -86,6 +86,59 @@ const authController = {
         success: false,
         message: 'Invalid login credentials',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  },
+
+  /**
+    * Get user profile by user_id
+    */
+  async getUserById(req, res) {
+    try {
+      const { userId } = req.params;
+
+      const userProfile = await AuthModel.getUserById(userId);
+
+      res.status(200).json({
+        success: true,
+        data: userProfile
+      });
+    } catch (error) {
+      console.error('getUserById error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to get user profile'
+      });
+    }
+  },
+
+  /**
+    * Update username by user_id
+    */
+  async changeUserNameByUserId(req, res) {
+    try {
+      const { userId } = req.params;
+      const { newUserName } = req.body;
+
+      if (!newUserName) {
+        return res.status(400).json({
+          success: false,
+          message: 'New username is required'
+        });
+      }
+
+      const updatedProfile = await AuthModel.changeUserNameByUserId(userId, newUserName);
+
+      res.status(200).json({
+        success: true,
+        message: 'Username updated successfully',
+        data: updatedProfile
+      });
+    } catch (error) {
+      console.error('changeUserNameByUserId error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to update username'
       });
     }
   },

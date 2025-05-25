@@ -14,7 +14,7 @@ app.use(cors())
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
-// Serve uploaded files statically (if needed)
+// multer route for handling files in uploads folder
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Sample Route
@@ -33,9 +33,7 @@ app.use('/api/stripe', stripeRoutes);
 
 const PORT = process.env.PORT || 3000;
 
-// Start the server and test the connection
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
-  // Test the database connection
   await testConnection();
 });

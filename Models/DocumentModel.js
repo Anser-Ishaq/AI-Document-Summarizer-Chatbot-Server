@@ -1,4 +1,3 @@
-// Models/DocumentModel.js
 import supabase from '../Utils/supabaseClient.js';
 import fs from 'fs';
 import path from 'path';

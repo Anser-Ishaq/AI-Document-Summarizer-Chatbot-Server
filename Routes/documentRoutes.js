@@ -1,4 +1,3 @@
-// Routes/documentRoutes.js
 import express from 'express';
 import documentController, { upload } from '../Controllers/documentController.js';
 

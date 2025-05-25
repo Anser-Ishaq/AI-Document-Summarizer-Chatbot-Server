@@ -3,11 +3,11 @@ import supabase from '../Utils/supabaseClient.js';
 const AuthModel = {
   /**
    * Register a new user
-   * @param {Object} userData - User registration data
-   * @param {string} userData.email - User email
-   * @param {string} userData.password - User password
-   * @param {string} userData.userName - User password
-   * @returns {Promise} - Promise resolving to registration result
+   * @param {Object} userData  
+   * @param {string} userData.email  
+   * @param {string} userData.password 
+   * @param {string} userData.userName  
+   * @returns {Promise}  
    */
   async signup({ email, password, userName }) {
     // Register the user with Supabase Auth
@@ -25,7 +25,7 @@ const AuthModel = {
           user_id: authData.user.id,
           email,
           username: userName,
-           status: 'free'
+          status: 'free'
         });
 
       if (profileError) throw profileError;
@@ -36,10 +36,10 @@ const AuthModel = {
 
   /**
    * Log in an existing user
-   * @param {Object} credentials - User login credentials
-   * @param {string} credentials.email - User email
-   * @param {string} credentials.password - User password
-   * @returns {Promise} - Promise resolving to login result
+   * @param {Object} credentials  
+   * @param {string} credentials.email  
+   * @param {string} credentials.password  
+   * @returns {Promise}  
    */
   async login({ email, password }) {
     // Step 1: Sign in with Supabase Auth
@@ -74,6 +74,46 @@ const AuthModel = {
       },
       session
     };
+  },
+
+  /**
+ * Get User Details
+ * @param {string} user-id
+ * @returns {Promise}
+ */
+  async getUserById(user_id) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user_id)
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  },
+
+    /**
+ * Change Username
+ * @param {string} user-id
+ * @param {string} newUserName
+ * @returns {Promise}
+ */
+  async changeUserNameByUserId(user_id, newUserName) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ username: newUserName })
+      .eq('user_id', user_id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
   },
 
 
