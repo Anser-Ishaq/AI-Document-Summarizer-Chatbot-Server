@@ -9,7 +9,7 @@ const AuthModel = {
    * @param {string} userData.userName  
    * @returns {Promise}  
    */
-  async signup({ email, password, userName }) {
+  async signup({ email, password, userName, role }) {
     // Register the user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -25,7 +25,8 @@ const AuthModel = {
           user_id: authData.user.id,
           email,
           username: userName,
-          status: 'free'
+          status: 'free',
+          role: role === 'admin' ? 'admin' : 'user'
         });
 
       if (profileError) throw profileError;
@@ -58,7 +59,7 @@ const AuthModel = {
     // Step 2: Fetch profile data (username, status)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('username, status')
+      .select('username, status, role')
       .eq('user_id', user.id)
       .single();
 
@@ -70,7 +71,8 @@ const AuthModel = {
         id: user.id,
         email: user.email,
         username: profile.username,
-        status: profile.status
+        status: profile.status,
+        role:profile.role
       },
       session
     };

@@ -9,7 +9,8 @@ const authController = {
   async signup(req, res) {
     try {
       // Validate input
-      const { email, password, userName } = req.body;
+      const { email, password, userName, role } = req.body;
+      const normalizedRole = role === 'admin' ? 'admin' : 'user';
 
       if (!email || !password || !userName) {
         return res.status(400).json({
@@ -22,7 +23,8 @@ const authController = {
       const userData = await AuthModel.signup({
         email,
         password,
-        userName
+        userName,
+        role
       });
 
       res.status(201).json({
@@ -75,7 +77,8 @@ const authController = {
             id: userData.user.id,
             email: userData.user.email,
             username: userData.user.username,
-            status: userData.user.status
+            status: userData.user.status,
+            role: userData.user.role
           },
           session: userData.session
         }
