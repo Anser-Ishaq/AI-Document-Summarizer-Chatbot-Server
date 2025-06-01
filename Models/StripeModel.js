@@ -557,6 +557,43 @@ const StripeModel = {
     },
 
     /**
+     * Get all coupons without any filters
+     */
+    async getAllCoupons() {
+        try {
+            const { data, error } = await supabase
+                .from('coupons')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                throw new Error(`Failed to fetch all coupons: ${error.message}`);
+            }
+
+            return data.map(coupon => ({
+                id: coupon.id,
+                code: coupon.code,
+                name: coupon.name,
+                description: coupon.description,
+                discountType: coupon.discount_type,
+                discountValue: coupon.discount_value,
+                maxRedemptions: coupon.max_redemptions,
+                currentRedemptions: coupon.current_redemptions,
+                expiresAt: coupon.expires_at,
+                stripeCouponId: coupon.stripe_coupon_id,
+                isActive: coupon.is_active,
+                createdAt: coupon.created_at,
+                isExpired: coupon.expires_at ? new Date(coupon.expires_at) < new Date() : false
+            }));
+
+        } catch (error) {
+            console.error('Get all coupons error:', error);
+            throw error;
+        }
+    },
+
+
+    /**
      * Get only active, non-expired coupons
      */
     async getActiveCoupons() {

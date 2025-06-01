@@ -12,7 +12,9 @@ router.get('/plans', StripeController.getActivePlans);
 router.patch('/plans/:planId/status', StripeController.updatePlanStatus);
 
 router.post('/coupons', StripeController.createCoupon);
+// this api expects params in query string
 router.get('/coupons', StripeController.getCoupons);
+router.get('/coupons/all', StripeController.getAllCoupons);
 router.get('/coupons/active', StripeController.getActiveCoupons);
 router.get('/coupons/validate/:code', StripeController.validateCoupon);
 router.patch('/coupons/:couponId/status', StripeController.updateCouponStatus);

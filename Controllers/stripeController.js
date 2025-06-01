@@ -345,6 +345,27 @@ const StripeController = {
     }
   },
 
+  async getAllCoupons(req, res) {
+    try {
+        const coupons = await StripeModel.getAllCoupons();
+
+        res.status(200).json({
+            success: true,
+            message: 'All coupons retrieved successfully',
+            data: coupons,
+            count: coupons.length
+        });
+
+    } catch (error) {
+        console.error('Get All Coupons Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to retrieve all coupons',
+            error: process.env.NODE_ENV === 'development' ? error : undefined
+        });
+    }
+},
+
   /**
    * Get active coupons only
    */

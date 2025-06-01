@@ -72,7 +72,7 @@ const AuthModel = {
         email: user.email,
         username: profile.username,
         status: profile.status,
-        role:profile.role
+        role: profile.role
       },
       session
     };
@@ -97,12 +97,28 @@ const AuthModel = {
     return data;
   },
 
-    /**
- * Change Username
- * @param {string} user-id
- * @param {string} newUserName
- * @returns {Promise}
+  /**
+ * Get all user profiles
  */
+  async getAllUsers() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch users: ${error.message}`);
+    }
+
+    return data;
+  },
+
+  /**
+* Change Username
+* @param {string} user-id
+* @param {string} newUserName
+* @returns {Promise}
+*/
   async changeUserNameByUserId(user_id, newUserName) {
     const { data, error } = await supabase
       .from('profiles')

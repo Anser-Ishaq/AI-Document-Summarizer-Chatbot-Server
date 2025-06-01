@@ -116,6 +116,27 @@ const authController = {
   },
 
   /**
+ * Get all user profiles
+ */
+  async getAllUsers(req, res) {
+    try {
+      const users = await AuthModel.getAllUsers();
+
+      res.status(200).json({
+        success: true,
+        data: users,
+        count: users.length
+      });
+    } catch (error) {
+      console.error('getAllUsers error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to get user profiles'
+      });
+    }
+  },
+
+  /**
     * Update username by user_id
     */
   async changeUserNameByUserId(req, res) {
