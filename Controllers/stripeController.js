@@ -162,6 +162,86 @@ const StripeController = {
     }
   },
 
+  async updatePlan(req, res) {
+    try {
+      const { planId } = req.params;
+      const { name, description, price, interval, features, is_active } = req.body;
+
+      // Validate planId exists
+      if (!planId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Plan ID is required'
+        });
+      }
+
+      // Validate at least one field is provided
+      if (!name && !description && !price && !interval && !features && is_active === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one field must be provided for update'
+        });
+      }
+
+      // Validate price format if provided
+      if (price) {
+        const parsedPrice = parseFloat(price);
+        if (isNaN(parsedPrice)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Price must be a valid number'
+          });
+        }
+      }
+
+      // Validate interval if provided
+      if (interval) {
+        const validIntervals = ['day', 'week', 'month', 'year'];
+        if (!validIntervals.includes(interval)) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid interval. Must be one of: ${validIntervals.join(', ')}`
+          });
+        }
+      }
+
+      // Validate features if provided
+      if (features) {
+        const validFeatures = ['pdf', 'txt', 'docx', 'png', 'jpg'];
+        const invalidFeatures = features.filter(f => !validFeatures.includes(f));
+        if (invalidFeatures.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid features: ${invalidFeatures.join(', ')}. Valid features are: ${validFeatures.join(', ')}`
+          });
+        }
+      }
+
+      const result = await StripeModel.updatePlan(planId, {
+        name,
+        description,
+        price,
+        interval,
+        features,
+        is_active
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Plan updated successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Update Plan Error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to update plan',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
+      });
+    }
+  },
+
   /**
    * Get all active plans
    */
@@ -181,6 +261,43 @@ const StripeController = {
       res.status(500).json({
         success: false,
         message: error.message || 'Failed to retrieve plans',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
+      });
+    }
+  },
+
+  async deletePlan(req, res) {
+    try {
+      const { planId } = req.params;
+
+      // Validate planId exists
+      if (!planId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Plan ID is required'
+        });
+      }
+
+      // First archive/delete in Stripe
+      const stripeResult = await StripeModel.archiveStripePlan(planId);
+
+      // Then delete from our database
+      const dbResult = await StripeModel.deletePlan(planId);
+
+      res.status(200).json({
+        success: true,
+        message: 'Plan deleted successfully',
+        data: {
+          stripe: stripeResult,
+          database: dbResult
+        }
+      });
+
+    } catch (error) {
+      console.error('Delete Plan Error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to delete plan',
         error: process.env.NODE_ENV === 'development' ? error : undefined
       });
     }

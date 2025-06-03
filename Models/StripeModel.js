@@ -244,36 +244,36 @@ const StripeModel = {
             if (!name || !description || !price || !interval || !userId) {
                 throw new Error('All fields are required: name, description, price, interval, userId');
             }
-    
+
             // Validate interval
             const validIntervals = ['day', 'week', 'month', 'year'];
             if (!validIntervals.includes(interval)) {
                 throw new Error(`Invalid interval. Must be one of: ${validIntervals.join(', ')}`);
             }
-    
+
             // Validate price
             if (price <= 0) {
                 throw new Error('Price must be greater than 0');
             }
-    
+
             // Validate features
             const validFeatures = ['pdf', 'txt', 'docx', 'png', 'jpg'];
             const invalidFeatures = features.filter(f => !validFeatures.includes(f));
             if (invalidFeatures.length > 0) {
                 throw new Error(`Invalid features: ${invalidFeatures.join(', ')}`);
             }
-    
+
             // Check if user is admin (optional - adjust based on your auth system)
             const { data: userProfile, error: userError } = await supabase
                 .from('profiles')
                 .select('role')
                 .eq('user_id', userId)
                 .single();
-    
+
             if (userError) {
                 throw new Error('Failed to verify user permissions');
             }
-    
+
             // Create Stripe product
             const product = await stripe.products.create({
                 name: name,
@@ -284,7 +284,7 @@ const StripeModel = {
                     features: features.join(',') // Optional: store features in Stripe metadata
                 }
             });
-    
+
             // Create Stripe price
             const stripePrice = await stripe.prices.create({
                 product: product.id,
@@ -298,7 +298,7 @@ const StripeModel = {
                     created_at: new Date().toISOString()
                 }
             });
-    
+
             // Save plan to Supabase
             const { data: planData, error: planError } = await supabase
                 .from('plans')
@@ -317,7 +317,7 @@ const StripeModel = {
                 ])
                 .select()
                 .single();
-    
+
             if (planError) {
                 // If database save fails, clean up Stripe resources
                 try {
@@ -328,7 +328,7 @@ const StripeModel = {
                 }
                 throw new Error(`Failed to save plan to database: ${planError.message}`);
             }
-    
+
             return {
                 id: planData.id,
                 name: planData.name,
@@ -341,13 +341,106 @@ const StripeModel = {
                 features: planData.features || [], // Return features array
                 createdAt: planData.created_at
             };
-    
+
         } catch (error) {
             console.error('Create plan error:', error);
             throw error;
         }
     },
 
+    async updatePlan(planId, { name, description, price, interval, features, is_active }) {
+        try {
+            // Get the existing plan
+            const { data: existingPlan, error: fetchError } = await supabase
+                .from('plans')
+                .select('*')
+                .eq('id', planId)
+                .single();
+
+            if (fetchError || !existingPlan) {
+                throw new Error('Plan not found');
+            }
+
+            // Prepare updates for Stripe
+            const stripeUpdates = {};
+            const supabaseUpdates = {};
+            let newPriceId = existingPlan.stripe_price_id;
+
+            // Update Stripe product if name or description changed
+            if (name || description) {
+                stripeUpdates.product = await stripe.products.update(existingPlan.stripe_product_id, {
+                    name: name || existingPlan.name,
+                    description: description || existingPlan.description,
+                    metadata: {
+                        ...existingPlan.metadata,
+                        updated_at: new Date().toISOString(),
+                        ...(features && { features: features.join(',') })
+                    }
+                });
+            }
+
+            // Create new Stripe price if price or interval changed
+            if (price || interval) {
+                const newPrice = await stripe.prices.create({
+                    product: existingPlan.stripe_product_id,
+                    unit_amount: Math.round((price || existingPlan.price) * 100),
+                    currency: 'usd',
+                    recurring: {
+                        interval: interval || existingPlan.interval
+                    },
+                    metadata: {
+                        created_by: existingPlan.created_by,
+                        created_at: new Date().toISOString()
+                    }
+                });
+                newPriceId = newPrice.id;
+
+                // Archive the old price
+                await stripe.prices.update(existingPlan.stripe_price_id, {
+                    active: false
+                });
+            }
+
+            // Prepare Supabase updates
+            if (name) supabaseUpdates.name = name;
+            if (description) supabaseUpdates.description = description;
+            if (price) supabaseUpdates.price = price;
+            if (interval) supabaseUpdates.interval = interval;
+            if (features) supabaseUpdates.features = features;
+            if (is_active !== undefined) supabaseUpdates.is_active = is_active;
+            if (newPriceId !== existingPlan.stripe_price_id) supabaseUpdates.stripe_price_id = newPriceId;
+
+            // Update plan in Supabase
+            const { data: updatedPlan, error: updateError } = await supabase
+                .from('plans')
+                .update(supabaseUpdates)
+                .eq('id', planId)
+                .select()
+                .single();
+
+            if (updateError) {
+                throw new Error(`Failed to update plan in database: ${updateError.message}`);
+            }
+
+            return {
+                id: updatedPlan.id,
+                name: updatedPlan.name,
+                description: updatedPlan.description,
+                price: updatedPlan.price,
+                interval: updatedPlan.interval,
+                stripeProductId: updatedPlan.stripe_product_id,
+                stripePriceId: updatedPlan.stripe_price_id,
+                isActive: updatedPlan.is_active,
+                features: updatedPlan.features || [],
+                createdAt: updatedPlan.created_at,
+                updatedAt: updatedPlan.updated_at
+            };
+
+        } catch (error) {
+            console.error('Update plan error:', error);
+            throw error;
+        }
+    },
     /**
      * Get all active plans
      */
@@ -369,6 +462,7 @@ const StripeModel = {
                 description: plan.description,
                 price: plan.price,
                 interval: plan.interval,
+                features: plan.features,
                 stripeProductId: plan.stripe_product_id,
                 stripePriceId: plan.stripe_price_id,
                 isActive: plan.is_active,
@@ -377,6 +471,80 @@ const StripeModel = {
 
         } catch (error) {
             console.error('Get active plans error:', error);
+            throw error;
+        }
+    },
+
+    async archiveStripePlan(planId) {
+        try {
+            // Get the existing plan first
+            const { data: existingPlan, error } = await supabase
+                .from('plans')
+                .select('stripe_product_id, stripe_price_id')
+                .eq('id', planId)
+                .single();
+
+            if (error || !existingPlan) {
+                throw new Error('Plan not found in database');
+            }
+
+            // Archive the price in Stripe
+            await stripe.prices.update(existingPlan.stripe_price_id, {
+                active: false
+            });
+
+            // Archive the product in Stripe (don't fully delete for record keeping)
+            const archivedProduct = await stripe.products.update(
+                existingPlan.stripe_product_id,
+                { active: false }
+            );
+
+            return {
+                productId: archivedProduct.id,
+                priceId: existingPlan.stripe_price_id,
+                status: 'archived'
+            };
+
+        } catch (error) {
+            console.error('Archive Stripe Plan error:', error);
+            throw new Error(`Failed to archive Stripe plan: ${error.message}`);
+        }
+    },
+
+
+    async deletePlan(planId) {
+        try {
+            // First check if there are active subscriptions
+            const { data: subscriptions, error: subError } = await supabase
+                .from('subscriptions')
+                .select('id')
+                .eq('plan_id', planId)
+                .eq('status', 'active');
+
+            if (subError) throw subError;
+            if (subscriptions.length > 0) {
+                throw new Error('Cannot delete plan with active subscriptions');
+            }
+
+            // Soft delete (update is_active and set deleted_at)
+            const { data, error } = await supabase
+                .from('plans')
+                .update({
+                    is_active: false,
+                    deleted_at: new Date().toISOString()
+                })
+                .eq('id', planId)
+                .select();
+
+            if (error) throw error;
+
+            return {
+                id: planId,
+                status: 'deactivated',
+                message: 'Plan deactivated (soft delete)'
+            };
+        } catch (error) {
+            console.error('Delete Plan error:', error);
             throw error;
         }
     },

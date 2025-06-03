@@ -9,7 +9,9 @@ router.post('/create-subscription-after-setup', StripeController.createSubscript
 
 router.post('/plans', StripeController.createPlan);
 router.get('/plans', StripeController.getActivePlans);
+router.delete('/plans/:planId', StripeController.deletePlan);
 router.patch('/plans/:planId/status', StripeController.updatePlanStatus);
+router.put('/plans/:planId', StripeController.updatePlan);
 
 router.post('/coupons', StripeController.createCoupon);
 // this api expects params in query string
