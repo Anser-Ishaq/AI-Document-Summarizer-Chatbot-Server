@@ -1,4 +1,5 @@
 import StripeModel from '../Models/StripeModel.js';
+import supabase from '../Utils/supabaseClient.js';
 
 const StripeController = {
   /**
@@ -389,29 +390,29 @@ const StripeController = {
     }
   },
 
-    /**
-   * Get active coupons only
-   */
-    async getActiveCoupons(req, res) {
-      try {
-        const coupons = await StripeModel.getActiveCoupons();
-  
-        res.status(200).json({
-          success: true,
-          message: 'Active coupons retrieved successfully',
-          data: coupons,
-          count: coupons.length
-        });
-  
-      } catch (error) {
-        console.error('Get Active Coupons Error:', error);
-        res.status(500).json({
-          success: false,
-          message: error.message || 'Failed to retrieve active coupons',
-          error: process.env.NODE_ENV === 'development' ? error : undefined
-        });
-      }
-    },
+  /**
+ * Get active coupons only
+ */
+  async getActiveCoupons(req, res) {
+    try {
+      const coupons = await StripeModel.getActiveCoupons();
+
+      res.status(200).json({
+        success: true,
+        message: 'Active coupons retrieved successfully',
+        data: coupons,
+        count: coupons.length
+      });
+
+    } catch (error) {
+      console.error('Get Active Coupons Error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to retrieve active coupons',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
+      });
+    }
+  },
 
   async getAllSubscriptions(req, res) {
     try {
@@ -431,6 +432,41 @@ const StripeController = {
         message: error.message || 'Failed to retrieve all subscriptions',
         error: process.env.NODE_ENV === 'development' ? error : undefined
       });
+    }
+  },
+
+  // In your Node.js backend (subscription controller)
+  async getActiveSubscription(req, res) {
+    try {
+      const { user_id } = req.query;
+
+      if (!user_id) {
+        return res.status(400).json({ error: 'User ID is required' });
+      }
+
+      // Get the most recent active subscription
+      const { data: subscription, error } = await supabase
+        .from('subscriptions')
+        .select(`
+        *,
+        plan:plan_id (*)
+      `)
+        .eq('user_id', user_id)
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) throw error;
+
+      if (!subscription) {
+        return res.json(null); // No active subscription
+      }
+
+      res.json(subscription);
+    } catch (error) {
+      console.error('Error fetching subscription:', error);
+      res.status(500).json({ error: 'Failed to fetch subscription' });
     }
   },
 

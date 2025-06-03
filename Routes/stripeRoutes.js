@@ -16,6 +16,7 @@ router.post('/coupons', StripeController.createCoupon);
 router.get('/coupons', StripeController.getCoupons);
 router.get('/coupons/all', StripeController.getAllCoupons);
 router.get('/subscriptions/all', StripeController.getAllSubscriptions);
+router.get('/subscriptions/active', StripeController.getActiveSubscription);
 router.get('/coupons/active', StripeController.getActiveCoupons);
 router.get('/coupons/validate/:code', StripeController.validateCoupon);
 router.patch('/coupons/:couponId/status', StripeController.updateCouponStatus);
