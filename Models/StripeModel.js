@@ -238,53 +238,53 @@ const StripeModel = {
             throw error;
         }
     },
-    /**
-     * Create a new plan with Stripe product and price
-     */
-    async createPlan({ name, description, price, interval, userId }) {
+    async createPlan({ name, description, price, interval, userId, features = [] }) {
         try {
             // Validate required fields
             if (!name || !description || !price || !interval || !userId) {
                 throw new Error('All fields are required: name, description, price, interval, userId');
             }
-
+    
             // Validate interval
             const validIntervals = ['day', 'week', 'month', 'year'];
             if (!validIntervals.includes(interval)) {
                 throw new Error(`Invalid interval. Must be one of: ${validIntervals.join(', ')}`);
             }
-
+    
             // Validate price
             if (price <= 0) {
                 throw new Error('Price must be greater than 0');
             }
-
+    
+            // Validate features
+            const validFeatures = ['pdf', 'txt', 'docx', 'png', 'jpg'];
+            const invalidFeatures = features.filter(f => !validFeatures.includes(f));
+            if (invalidFeatures.length > 0) {
+                throw new Error(`Invalid features: ${invalidFeatures.join(', ')}`);
+            }
+    
             // Check if user is admin (optional - adjust based on your auth system)
             const { data: userProfile, error: userError } = await supabase
                 .from('profiles')
                 .select('role')
                 .eq('user_id', userId)
                 .single();
-
+    
             if (userError) {
                 throw new Error('Failed to verify user permissions');
             }
-
-            // Uncomment this if you have admin role checking
-            // if (userProfile.role !== 'admin') {
-            //     throw new Error('Only admin users can create plans');
-            // }
-
+    
             // Create Stripe product
             const product = await stripe.products.create({
                 name: name,
                 description: description,
                 metadata: {
                     created_by: userId,
-                    created_at: new Date().toISOString()
+                    created_at: new Date().toISOString(),
+                    features: features.join(',') // Optional: store features in Stripe metadata
                 }
             });
-
+    
             // Create Stripe price
             const stripePrice = await stripe.prices.create({
                 product: product.id,
@@ -298,7 +298,7 @@ const StripeModel = {
                     created_at: new Date().toISOString()
                 }
             });
-
+    
             // Save plan to Supabase
             const { data: planData, error: planError } = await supabase
                 .from('plans')
@@ -311,12 +311,13 @@ const StripeModel = {
                         stripe_product_id: product.id,
                         stripe_price_id: stripePrice.id,
                         created_by: userId,
-                        is_active: true
+                        is_active: true,
+                        features: features // Add features array to the plan
                     }
                 ])
                 .select()
                 .single();
-
+    
             if (planError) {
                 // If database save fails, clean up Stripe resources
                 try {
@@ -327,7 +328,7 @@ const StripeModel = {
                 }
                 throw new Error(`Failed to save plan to database: ${planError.message}`);
             }
-
+    
             return {
                 id: planData.id,
                 name: planData.name,
@@ -337,9 +338,10 @@ const StripeModel = {
                 stripeProductId: planData.stripe_product_id,
                 stripePriceId: planData.stripe_price_id,
                 isActive: planData.is_active,
+                features: planData.features || [], // Return features array
                 createdAt: planData.created_at
             };
-
+    
         } catch (error) {
             console.error('Create plan error:', error);
             throw error;

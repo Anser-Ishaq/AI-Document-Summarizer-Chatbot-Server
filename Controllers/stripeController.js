@@ -86,7 +86,7 @@ const StripeController = {
    */
   async createPlan(req, res) {
     try {
-      const { name, description, price, interval, userId } = req.body;
+      const { name, description, price, interval, userId, features } = req.body;
 
       // Validate required fields
       if (!name || !description || !price || !interval || !userId) {
@@ -122,12 +122,25 @@ const StripeController = {
         });
       }
 
+      // Validate features if provided
+      const validFeatures = ['pdf', 'txt', 'docx', 'png', 'jpg'];
+      if (features) {
+        const invalidFeatures = features.filter(f => !validFeatures.includes(f));
+        if (invalidFeatures.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid features: ${invalidFeatures.join(', ')}. Valid features are: ${validFeatures.join(', ')}`
+          });
+        }
+      }
+
       const result = await StripeModel.createPlan({
         name: name.trim(),
         description: description.trim(),
         price: parsedPrice,
         interval,
-        userId
+        userId,
+        features: features || []
       });
 
       console.log("Plan created successfully:", result);
@@ -376,6 +389,30 @@ const StripeController = {
     }
   },
 
+    /**
+   * Get active coupons only
+   */
+    async getActiveCoupons(req, res) {
+      try {
+        const coupons = await StripeModel.getActiveCoupons();
+  
+        res.status(200).json({
+          success: true,
+          message: 'Active coupons retrieved successfully',
+          data: coupons,
+          count: coupons.length
+        });
+  
+      } catch (error) {
+        console.error('Get Active Coupons Error:', error);
+        res.status(500).json({
+          success: false,
+          message: error.message || 'Failed to retrieve active coupons',
+          error: process.env.NODE_ENV === 'development' ? error : undefined
+        });
+      }
+    },
+
   async getAllSubscriptions(req, res) {
     try {
       const subscriptions = await StripeModel.getAllSubscriptions();
@@ -397,29 +434,6 @@ const StripeController = {
     }
   },
 
-  /**
-   * Get active coupons only
-   */
-  async getActiveCoupons(req, res) {
-    try {
-      const coupons = await StripeModel.getActiveCoupons();
-
-      res.status(200).json({
-        success: true,
-        message: 'Active coupons retrieved successfully',
-        data: coupons,
-        count: coupons.length
-      });
-
-    } catch (error) {
-      console.error('Get Active Coupons Error:', error);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to retrieve active coupons',
-        error: process.env.NODE_ENV === 'development' ? error : undefined
-      });
-    }
-  },
 
   /**
    * Validate a coupon code
