@@ -6,129 +6,238 @@ const PRICE_ID = process.env.STRIPE_PRICE_ID;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 const StripeModel = {
-    /**
-     * Create a new Stripe subscription using Setup Intent approach
-     */
-    async createSubscription({ userId, email }) {
+    async createSubscription({ userId, email, couponCode = null, planId }) {
         try {
-            // Create customer first
+            if (!planId) throw new Error('Plan ID is required');
+
+            // Validate plan from Supabase
+            const { data: plan, error: planError } = await supabase
+                .from('plans')
+                .select('id, name, stripe_price_id')
+                .eq('id', planId)
+                .eq('is_active', true)
+                .single();
+
+            if (planError || !plan) {
+                throw new Error('Invalid or inactive plan');
+            }
+
+            // Validate coupon if provided
+            let coupon = null;
+            if (couponCode) {
+                try {
+                    coupon = await stripe.coupons.retrieve(couponCode);
+                    console.log('✅ Coupon retrieved from Stripe:', {
+                        id: coupon.id,
+                        name: coupon.name,
+                        percent_off: coupon.percent_off,
+                        amount_off: coupon.amount_off,
+                        valid: coupon.valid
+                    });
+                } catch (error) {
+                    console.error('❌ Coupon validation failed:', error.message);
+                    throw new Error('Invalid coupon code');
+                }
+            }
+
+            // Create Stripe customer
             const customer = await stripe.customers.create({
                 email,
-                metadata: { userId },
+                metadata: { userId, planId }
             });
 
-            // Create a Setup Intent to collect payment method
+            // Create SetupIntent
             const setupIntent = await stripe.setupIntents.create({
                 customer: customer.id,
                 payment_method_types: ['card'],
                 usage: 'off_session',
                 metadata: {
                     userId,
-                    priceId: 'price_1RSEbvRf72IVJJINNES56Sod'
+                    planId,
+                    ...(couponCode && { couponCode })
                 }
             });
 
             return {
                 clientSecret: setupIntent.client_secret,
                 customerId: customer.id,
-                type: 'setup_intent'
+                type: 'setup_intent',
+                planId: plan.id,
+                couponValid: !!coupon,
+                couponDetails: coupon ? {
+                    id: coupon.id,
+                    percentOff: coupon.percent_off,
+                    amountOff: coupon.amount_off
+                } : null
             };
-
         } catch (error) {
-            console.error('Stripe subscription creation error:', error);
+            console.error('createSubscription error:', error);
             throw error;
         }
     },
 
-    /**
-     * Create subscription after setup intent is confirmed
-     */
-    async createSubscriptionAfterSetup({ customerId, paymentMethodId }) {
+    async createSubscriptionAfterSetup({ customerId, paymentMethodId, couponCode }) {
         try {
-            // Get customer to retrieve userId
             const customer = await stripe.customers.retrieve(customerId);
             const userId = customer.metadata.userId;
+            const planId = customer.metadata.planId;
 
-            // Attach payment method to customer
-            await stripe.paymentMethods.attach(paymentMethodId, {
-                customer: customerId,
-            });
+            if (!planId) throw new Error('Missing planId in customer metadata');
 
-            // Set as default payment method
+            // Fetch plan
+            const { data: plan, error: planError } = await supabase
+                .from('plans')
+                .select('*')
+                .eq('id', planId)
+                .single();
+
+            if (planError || !plan) throw new Error('Plan not found');
+
+            const priceId = plan.stripe_price_id;
+            console.log('📋 Plan details:', { planId, priceId, planPrice: plan.price });
+
+            // Attach and set default payment method
+            await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
             await stripe.customers.update(customerId, {
-                invoice_settings: {
-                    default_payment_method: paymentMethodId,
-                },
+                invoice_settings: { default_payment_method: paymentMethodId }
             });
 
-            // Create subscription
-            const subscription = await stripe.subscriptions.create({
+            // Create subscription with coupon
+            const subscriptionParams = {
                 customer: customerId,
-                items: [
-                    { price: 'price_1RSEbvRf72IVJJINNES56Sod' }
-                ],
+                items: [{ price: priceId }],
                 default_payment_method: paymentMethodId,
+            };
+
+            // Add coupon if provided using the new discounts parameter
+            if (couponCode) {
+                subscriptionParams.discounts = [{ coupon: couponCode }];
+                console.log('🎟️ Adding coupon to subscription:', couponCode);
+            }
+
+            console.log('📝 Creating subscription with params:', subscriptionParams);
+            const subscription = await stripe.subscriptions.create(subscriptionParams);
+            console.log('✅ Subscription created:', {
+                id: subscription.id,
+                status: subscription.status,
+                discount: subscription.discount
             });
 
-            // Update user status to 'pro' immediately after successful subscription creation
+            // Retrieve the invoice to get actual charged amount
+            const invoice = subscription.latest_invoice && await stripe.invoices.retrieve(subscription.latest_invoice);
+
+            // Debug invoice details
+            if (invoice) {
+                console.log('🧾 Invoice details:', {
+                    id: invoice.id,
+                    subtotal: invoice.subtotal,
+                    total: invoice.total,
+                    discount: invoice.discount,
+                    discounts: invoice.discounts,
+                    amount_due: invoice.amount_due,
+                    amount_paid: invoice.amount_paid
+                });
+            } else {
+                console.log('❌ No invoice found');
+            }
+
+            const paymentIntent = invoice?.payment_intent && await stripe.paymentIntents.retrieve(invoice.payment_intent);
+            const paymentMethod = paymentIntent?.payment_method && typeof paymentIntent.payment_method === 'string'
+                ? await stripe.paymentMethods.retrieve(paymentIntent.payment_method)
+                : paymentIntent?.payment_method;
+
+            const card = paymentMethod?.card || {};
+
+            // Calculate amounts correctly
+            const originalAmountCents = plan.price * 100; // Original amount in cents
+            let finalAmountCents = originalAmountCents; // Default to original amount
+            let discountAmountCents = 0;
+
+            if (invoice) {
+                // Use the invoice total as the final amount (this is what customer actually pays)
+                finalAmountCents = invoice.total;
+
+                // Calculate discount amount - check multiple ways
+                if (invoice.discount || (invoice.discounts && invoice.discounts.length > 0)) {
+                    discountAmountCents = invoice.subtotal - invoice.total;
+                    console.log('💰 Discount calculation:', {
+                        subtotal: invoice.subtotal,
+                        total: invoice.total,
+                        calculatedDiscount: discountAmountCents
+                    });
+                } else {
+                    console.log('⚠️ No discount found on invoice');
+                }
+            }
+
+            console.log('🧮 Final amount calculation:', {
+                originalAmount: originalAmountCents / 100,
+                finalAmount: finalAmountCents / 100,
+                discountAmount: discountAmountCents / 100,
+                couponCode: couponCode
+            });
+
+            // Save to subscriptions table with actual charged amount and planId
+            const subscriptionData = {
+                user_id: userId,
+                plan_id: planId, // ✅ Added planId field
+                status: subscription.status,
+                amount: finalAmountCents, // The discounted amount (what customer actually pays)
+                original_amount: originalAmountCents, // Original amount before discount
+                stripe_subscription_id: subscription.id,
+                stripe_customer_id: customerId,
+                payment_method_id: paymentMethod?.id || null,
+                card_brand: card.brand || null,
+                card_last4: card.last4 || null,
+                card_exp_month: card.exp_month || null,
+                card_exp_year: card.exp_year || null,
+                coupon_code: couponCode || null,
+                discount_amount: discountAmountCents || null // Actual discount applied in cents
+            };
+
+            console.log('💾 Saving subscription data:', subscriptionData);
+
+            // Insert subscription with planId
+            const { data: insertedSubscription, error: insertError } = await supabase
+                .from('subscriptions')
+                .insert(subscriptionData)
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error('❌ Failed to insert subscription:', insertError);
+                throw new Error('Failed to save subscription to database');
+            }
+
+            console.log('✅ Subscription saved to database:', insertedSubscription);
+
+            // Update user to pro
             if (subscription.status === 'active' || subscription.status === 'trialing') {
-                await supabase
+                const { error: updateError } = await supabase
                     .from('profiles')
                     .update({ status: 'pro' })
                     .eq('user_id', userId);
 
-                console.log(`✅ User ${userId} status updated to 'pro' after subscription creation`);
+                if (updateError) {
+                    console.error('❌ Failed to update user status:', updateError);
+                }
             }
 
             return {
                 subscriptionId: subscription.id,
                 status: subscription.status,
                 customerId: customerId,
-                userStatus: 'pro'
+                userStatus: 'pro',
+                planId, // ✅ Return planId in response
+                actualAmount: finalAmountCents / 100, // Return in dollars for frontend
+                discountAmount: discountAmountCents / 100, // Return in dollars for frontend
+                originalAmount: plan.price
             };
-
         } catch (error) {
-            console.error('Stripe subscription after setup error:', error);
+            console.error('createSubscriptionAfterSetup error:', error);
             throw error;
         }
     },
-
-    /**
-     * Alternative method: Create subscription after payment method is attached
-     */
-    async createSubscriptionWithPaymentMethod({ userId, email, paymentMethodId }) {
-        try {
-            // Create or retrieve customer
-            const customer = await stripe.customers.create({
-                email,
-                metadata: { userId },
-                payment_method: paymentMethodId,
-                invoice_settings: {
-                    default_payment_method: paymentMethodId,
-                },
-            });
-
-            // Create subscription
-            const subscription = await stripe.subscriptions.create({
-                customer: customer.id,
-                items: [
-                    { price: 'price_1RSEbvRf72IVJJINNES56Sod' }
-                ],
-                expand: ['latest_invoice.payment_intent'],
-            });
-
-            return {
-                subscriptionId: subscription.id,
-                clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
-                status: subscription.status
-            };
-
-        } catch (error) {
-            console.error('Stripe subscription with payment method error:', error);
-            throw error;
-        }
-    },
-
     /**
      * Create a new plan with Stripe product and price
      */
@@ -592,6 +701,66 @@ const StripeModel = {
         }
     },
 
+    /**
+     * Get all subscriptions
+     */
+    async getAllSubscriptions() {
+        try {
+            // First get all subscriptions with plans
+            const { data: subscriptions, error: subsError } = await supabase
+                .from('subscriptions')
+                .select(`
+                    *,
+                    plans (*)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (subsError) throw new Error(`Failed to fetch subscriptions: ${subsError.message}`);
+
+            // Get all unique user IDs
+            const userIds = [...new Set(subscriptions.map(s => s.user_id))];
+
+            // Fetch user emails using the Auth Admin API
+            const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers({
+                page: 1,
+                perPage: 1000, // Adjust based on your needs
+            });
+
+            if (usersError) throw new Error(`Failed to fetch users: ${usersError.message}`);
+
+            // Filter to only the users we need and create a map
+            const userMap = users
+                .filter(user => userIds.includes(user.id))
+                .reduce((acc, user) => {
+                    acc[user.id] = user.email;
+                    return acc;
+                }, {});
+
+            // Combine the data
+            return subscriptions.map(subs => ({
+                id: subs.id,
+                userId: subs.user_id,
+                userEmail: userMap[subs.user_id] || null,
+                status: subs.status,
+                customerId: subs.stripe_customer_id,
+                amountPaid: subs.amount,
+                couponUsed: subs.coupon_code,
+                discountAmount: subs.discount_amount,
+                originalAmount: subs.original_amount,
+                planId: subs.plan_id,
+                plan: subs.plans ? {
+                    id: subs.plans.id,
+                    name: subs.plans.name,
+                    price: subs.plans.price,
+                    interval: subs.plans.interval,
+                } : null
+            }));
+
+        } catch (error) {
+            console.error('Get all subscriptions error:', error);
+            throw error;
+        }
+    },
 
     /**
      * Get only active, non-expired coupons
@@ -631,34 +800,26 @@ const StripeModel = {
     },
 
     /**
-     * Validate a coupon code
-     */
+  * Validate a coupon code (checks your Supabase table)
+  */
     async validateCoupon(code) {
         try {
             const { data: coupon, error } = await supabase
                 .from('coupons')
                 .select('*')
-                .eq('code', code)
+                .eq('code', code.toUpperCase())
                 .single();
 
-            if (error || !coupon) {
-                throw new Error('Coupon not found');
-            }
+            if (error || !coupon) throw new Error('Coupon not found');
 
-            // Check if coupon is active
-            if (!coupon.is_active) {
-                throw new Error('Coupon is not active');
-            }
-
-            // Check if coupon has expired
-            if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+            if (!coupon.is_active) throw new Error('Coupon is not active');
+            if (coupon.expires_at && new Date(coupon.expires_at) < new Date())
                 throw new Error('Coupon has expired');
-            }
-
-            // Check if coupon has reached max redemptions
-            if (coupon.max_redemptions && coupon.current_redemptions >= coupon.max_redemptions) {
+            if (
+                coupon.max_redemptions &&
+                coupon.current_redemptions >= coupon.max_redemptions
+            )
                 throw new Error('Coupon has reached maximum redemptions');
-            }
 
             return {
                 id: coupon.id,
@@ -676,7 +837,7 @@ const StripeModel = {
             };
 
         } catch (error) {
-            console.error('Validate coupon error:', error);
+            console.error('Validate coupon error:', error.message || error);
             throw error;
         }
     },

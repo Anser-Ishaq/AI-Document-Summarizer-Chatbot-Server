@@ -6,26 +6,37 @@ const StripeController = {
    */
   async createSubscription(req, res) {
     try {
-      const { userId, email, couponCode } = req.body;
-      console.log("user id, email, and coupon", userId, email, couponCode);
+      const { userId, email, couponCode, planId } = req.body;
 
-      if (!userId || !email) {
+      console.log("Request body:", { userId, email, couponCode, planId });
+
+      // Basic validation
+      if (!userId || !email || !planId) {
         return res.status(400).json({
           success: false,
-          message: 'User ID and email are required'
+          message: 'User ID, email, and plan ID are required'
         });
       }
 
-      const result = await StripeModel.createSubscription({ userId, email, couponCode });
-      console.log("subscription result", result);
+      // Call StripeModel with all necessary parameters
+      const result = await StripeModel.createSubscription({
+        userId,
+        email,
+        couponCode,
+        planId
+      });
+
+      console.log("Subscription initialized:", result);
 
       res.status(200).json({
         success: true,
         message: 'Subscription initialized',
         data: result
       });
+
     } catch (error) {
-      console.error('Create Subscription Error:', error);
+      console.error('Create Subscription Error:', error.message || error);
+
       res.status(500).json({
         success: false,
         message: error.message || 'Failed to create subscription',
@@ -33,6 +44,7 @@ const StripeController = {
       });
     }
   },
+
 
   /**
    * Create subscription after setup intent
@@ -211,8 +223,6 @@ const StripeController = {
     }
   },
 
-  // COUPON CONTROLLERS
-
   /**
    * Create a new coupon (Admin only)
    */
@@ -347,24 +357,45 @@ const StripeController = {
 
   async getAllCoupons(req, res) {
     try {
-        const coupons = await StripeModel.getAllCoupons();
+      const coupons = await StripeModel.getAllCoupons();
 
-        res.status(200).json({
-            success: true,
-            message: 'All coupons retrieved successfully',
-            data: coupons,
-            count: coupons.length
-        });
+      res.status(200).json({
+        success: true,
+        message: 'All coupons retrieved successfully',
+        data: coupons,
+        count: coupons.length
+      });
 
     } catch (error) {
-        console.error('Get All Coupons Error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to retrieve all coupons',
-            error: process.env.NODE_ENV === 'development' ? error : undefined
-        });
+      console.error('Get All Coupons Error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to retrieve all coupons',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
+      });
     }
-},
+  },
+
+  async getAllSubscriptions(req, res) {
+    try {
+      const subscriptions = await StripeModel.getAllSubscriptions();
+
+      res.status(200).json({
+        success: true,
+        message: 'All subscriptions retrieved successfully',
+        data: subscriptions,
+        count: subscriptions.length
+      });
+
+    } catch (error) {
+      console.error('Get All subscriptions Error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to retrieve all subscriptions',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
+      });
+    }
+  },
 
   /**
    * Get active coupons only
