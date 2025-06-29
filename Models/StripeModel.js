@@ -1015,9 +1015,9 @@ const StripeModel = {
     /**
      * Update coupon status
      */
-    async updateCouponStatus({ couponId, isActive, userId }) {
+    async updateCoupon({ couponId, userId, updateData }) {
         try {
-            // Get coupon details
+            // Get coupon details first
             const { data: couponData, error: couponError } = await supabase
                 .from('coupons')
                 .select('*')
@@ -1028,8 +1028,8 @@ const StripeModel = {
                 throw new Error(`Coupon not found: ${couponError.message}`);
             }
 
-            // Update Stripe coupon status by setting it as deleted (Stripe doesn't allow reactivation)
-            if (!isActive) {
+            // Handle Stripe updates if needed
+            if (updateData.isActive !== undefined && !updateData.isActive) {
                 try {
                     await stripe.coupons.del(couponData.stripe_coupon_id);
                 } catch (stripeError) {
@@ -1037,28 +1037,44 @@ const StripeModel = {
                 }
             }
 
+            const supabaseUpdate = {};
+
+            // Explicit field mappings (camelCase → snake_case)
+            if (updateData.name !== undefined) supabaseUpdate.name = updateData.name;
+            if (updateData.code !== undefined) supabaseUpdate.code = updateData.code;
+            if (updateData.description !== undefined) supabaseUpdate.description = updateData.description;
+            if (updateData.discountType !== undefined) supabaseUpdate.discount_type = updateData.discountType;
+            if (updateData.discountValue !== undefined) supabaseUpdate.discount_value = updateData.discountValue;
+            if (updateData.isActive !== undefined) supabaseUpdate.is_active = updateData.isActive;
+            if (updateData.expiresAt !== undefined) supabaseUpdate.expires_at = updateData.expiresAt;
+            if (updateData.maxRedemptions !== undefined) supabaseUpdate.max_redemptions = updateData.maxRedemptions;
+
             // Update coupon in database
             const { data: updatedCoupon, error: updateError } = await supabase
                 .from('coupons')
-                .update({ is_active: isActive })
+                .update(supabaseUpdate)
                 .eq('id', couponId)
                 .select()
                 .single();
 
-            if (updateError) {
-                throw new Error(`Failed to update coupon: ${updateError.message}`);
-            }
+            if (updateError) throw new Error(`Failed to update coupon: ${updateError.message}`);
 
+            // Return data in camelCase for frontend
             return {
                 id: updatedCoupon.id,
                 code: updatedCoupon.code,
                 name: updatedCoupon.name,
+                description: updatedCoupon.description,
                 isActive: updatedCoupon.is_active,
+                discountType: updatedCoupon.discount_type,
+                discountValue: updatedCoupon.discount_value,
+                expiresAt: updatedCoupon.expires_at,
+                maxRedemptions: updatedCoupon.max_redemptions,
                 updatedAt: updatedCoupon.updated_at
             };
 
         } catch (error) {
-            console.error('Update coupon status error:', error);
+            console.error('Update coupon error:', error);
             throw error;
         }
     },
@@ -1203,6 +1219,36 @@ const StripeModel = {
         } else {
             return Math.min(coupon.discountValue, originalPrice);
         }
+    },
+    async getDashboardStats(req, res) {
+        const [profileCount, revenueTotal, plansCount] = await Promise.all([
+            supabase.from('profiles').select('*', { count: 'exact', head: true }),
+
+            supabase
+                .from('subscriptions')
+                .select('amount')
+                .then(res => ({
+                    error: res.error,
+                    data: res.data,
+                    total: res.data?.reduce((sum, sub) => sum + (sub.amount || 0), 0),
+                })),
+
+            supabase.from('plans').select('*', { count: 'exact', head: true })
+        ]);
+
+        if (profileCount.error || revenueTotal.error || plansCount.error) {
+            throw new Error(
+                profileCount.error?.message ||
+                revenueTotal.error?.message ||
+                plansCount.error?.message
+            );
+        }
+
+        return {
+            totalUsers: profileCount.count,
+            totalRevenue: revenueTotal.total,
+            totalPlans: plansCount.count,
+        };
     },
 
 };

@@ -552,7 +552,6 @@ const StripeController = {
     }
   },
 
-  // In your Node.js backend (subscription controller)
   async getActiveSubscription(req, res) {
     try {
       const { user_id } = req.query;
@@ -562,28 +561,77 @@ const StripeController = {
       }
 
       // Get the most recent active subscription
-      const { data: subscription, error } = await supabase
+      const { data: subscriptions, error } = await supabase
         .from('subscriptions')
         .select(`
-        *,
-        plan:plan_id (*)
-      `)
+          *,
+          plan:plan_id (*)
+        `)
         .eq('user_id', user_id)
         .neq('status', 'cancelled')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      if (!subscription) {
+      if (!subscriptions || subscriptions.length === 0) {
         return res.json(null); // No active subscription
       }
 
-      res.json(subscription);
+      // Return the most recent subscription (first one in the array)
+      res.json(subscriptions[0]);
     } catch (error) {
       console.error('Error fetching subscription:', error);
-      res.status(500).json({ error: 'Failed to fetch subscription' });
+      res.status(500).json({
+        error: 'Failed to fetch subscription',
+        details: error.message
+      });
+    }
+  },
+
+  async cancelSubscription(req, res) {
+    try {
+      const { userId } = req.body; // Or get from auth token
+
+      // 1. Check for active subscription
+      const { data: subscription, error: subError } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .single();
+
+      if (subError || !subscription) {
+        return res.status(400).json({ error: "No active subscription found" });
+      }
+
+      // 2. Update subscription status in Supabase
+      const { error: updateError } = await supabase
+        .from('subscriptions')
+        .update({
+          status: 'canceled',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', subscription.id);
+
+      if (updateError) throw updateError;
+
+      // 3. Optional: Update user status in profiles if needed
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          status: 'free',
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId);
+
+      res.json({
+        success: true,
+        message: "Subscription canceled successfully"
+      });
+
+    } catch (error) {
+      console.error("Cancel error:", error);
+      res.status(500).json({ error: "Failed to cancel subscription" });
     }
   },
 
@@ -622,22 +670,15 @@ const StripeController = {
   /**
    * Update coupon status (activate/deactivate)
    */
-  async updateCouponStatus(req, res) {
+  async updateCoupon(req, res) {
     try {
       const { couponId } = req.params;
-      const { isActive, userId } = req.body;
+      const { userId, ...updateData } = req.body;
 
       if (!couponId) {
         return res.status(400).json({
           success: false,
           message: 'Coupon ID is required'
-        });
-      }
-
-      if (typeof isActive !== 'boolean') {
-        return res.status(400).json({
-          success: false,
-          message: 'isActive must be a boolean value'
         });
       }
 
@@ -648,23 +689,41 @@ const StripeController = {
         });
       }
 
-      const result = await StripeModel.updateCouponStatus({
+      if (!updateData || Object.keys(updateData).length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No fields provided for update'
+        });
+      }
+
+      // Validate updateData contains only allowed fields
+      const allowedFields = ['name', 'code', 'description', 'isActive', 'discountType', 'discountValue', 'expiresAt', 'maxRedemptions', 'minimumAmount'];
+      const invalidFields = Object.keys(updateData).filter(field => !allowedFields.includes(field));
+
+      if (invalidFields.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid field(s) for update: ${invalidFields.join(', ')}`
+        });
+      }
+
+      const result = await StripeModel.updateCoupon({
         couponId,
-        isActive,
-        userId
+        userId,
+        updateData
       });
 
       res.status(200).json({
         success: true,
-        message: `Coupon ${isActive ? 'activated' : 'deactivated'} successfully`,
+        message: 'Coupon updated successfully',
         data: result
       });
 
     } catch (error) {
-      console.error('Update Coupon Status Error:', error);
+      console.error('Update Coupon Error:', error);
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to update coupon status',
+        message: error.message || 'Failed to update coupon',
         error: process.env.NODE_ENV === 'development' ? error : undefined
       });
     }
@@ -752,7 +811,25 @@ const StripeController = {
       console.error('Webhook Error:', error);
       res.status(400).send(`Webhook Error: ${error.message}`);
     }
-  }
+  },
+
+  async getDashboardStats(req, res) {
+    try {
+      const stats = await StripeModel.getDashboardStats();
+
+      res.status(200).json({
+        success: true,
+        message: 'Admin dashboard stats retrieved',
+        data: stats,
+      });
+    } catch (error) {
+      console.error('Dashboard Stats Error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to fetch dashboard stats',
+      });
+    }
+  },
 };
 
 export default StripeController;

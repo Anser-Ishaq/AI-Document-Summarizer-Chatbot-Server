@@ -2,10 +2,10 @@ import express from 'express';
 import StripeController from '../Controllers/stripeController.js';
 
 const router = express.Router();
-
-
+router.get('/admin/dashboard', StripeController.getDashboardStats);
 router.post('/create-subscription', StripeController.createSubscription);
 router.post('/create-subscription-after-setup', StripeController.createSubscriptionAfterSetup);
+router.post('/cancel-subscription', StripeController.cancelSubscription);
 
 router.post('/plans', StripeController.createPlan);
 router.get('/plans', StripeController.getActivePlans);
@@ -21,7 +21,7 @@ router.get('/subscriptions/all', StripeController.getAllSubscriptions);
 router.get('/subscriptions/active', StripeController.getActiveSubscription);
 router.get('/coupons/active', StripeController.getActiveCoupons);
 router.get('/coupons/validate/:code', StripeController.validateCoupon);
-router.patch('/coupons/:couponId/status', StripeController.updateCouponStatus);
+router.patch('/coupons/:couponId', StripeController.updateCoupon);
 router.delete('/coupons/:couponId', StripeController.deleteCoupon);
 router.get('/coupons/:couponId/usage', StripeController.getCouponUsage);
 
