@@ -7,14 +7,14 @@ export const testConnection = async () => {
     const { data, error } = await supabase.auth.getSession();
     
     if (error) {
-      console.error('❌ Failed to connect to Supabase:', error.message);
+      console.error('Failed to connect to Supabase:', error.message);
       return { success: false, error: error.message };
     } else {
-      console.log('✅ Successfully connected to Supabase database');
+      console.log('Successfully connected to Supabase database');
       return { success: true };
     }
   } catch (error) {
-    console.error('❌ Error testing database connection:', error.message);
+    console.error('Error testing database connection:', error.message);
     return { success: false, error: error.message };
   }
 };
